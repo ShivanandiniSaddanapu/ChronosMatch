@@ -32,11 +32,15 @@ class MatchingEngine:
     def _match_buy(self, order: Order) -> list[Trade]:
         trades = []
 
-        while order.quantity > 0 and self.order_book.best_ask() is not None:
-            best_price = self.order_book.best_ask()
 
+        while order.quantity > 0:
+            best_price = self.order_book.best_ask()
+            if best_price is None:
+                break
             if order.price < best_price:
                 break
+
+       
 
             orders = self.order_book.asks[best_price]
             resting_order = orders[0]
@@ -59,7 +63,7 @@ class MatchingEngine:
                 orders.popleft()
 
             if not orders:
-                self.order_book.remove_empty_ask_level(best_price)
+                del self.order_book.asks[best_price]
 
         return trades
 
@@ -93,6 +97,6 @@ class MatchingEngine:
                 orders.popleft()
 
             if not orders:
-                self.order_book.remove_empty_bid_level(best_price)
+                del self.order_book.bids[best_price]
 
         return trades
