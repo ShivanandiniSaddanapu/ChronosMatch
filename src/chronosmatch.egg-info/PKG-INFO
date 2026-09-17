@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: chronosmatch
+Version: 0.1.0
+Summary: High-performance order matching and market simulation engine
+Requires-Python: >=3.12
