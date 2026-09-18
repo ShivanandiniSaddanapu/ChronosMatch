@@ -28,3 +28,7 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Cython generated files
+*.c
+*.pyd
