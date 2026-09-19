@@ -33,8 +33,34 @@ class MMapRingBuffer:
         self.write_index = 0
         self.read_index = 0
 
+    @property
+    def count(self) -> int:
+        return self.write_index - self.read_index
+
+    @property
+    def is_empty(self) -> bool:
+        return self.count == 0
+
+    @property
+    def is_full(self) -> bool:
+        return self.count >= self.capacity
+
     def write(self, order_id: int, price: float, quantity: int) -> None:
-        offset = (self.write_index % self.capacity) * self.RECORD_SIZE
+        if self.is_full:
+            raise BufferError("Ring buffer is full")
+
+        if order_id < 0:
+            raise ValueError("Order ID must not be negative")
+
+        if price <= 0:
+            raise ValueError("Price must be greater than zero")
+
+        if quantity <= 0:
+            raise ValueError("Quantity must be greater than zero")
+
+        offset = (
+            self.write_index % self.capacity
+        ) * self.RECORD_SIZE
 
         data = self.RECORD_FORMAT.pack(
             order_id,
@@ -47,10 +73,12 @@ class MMapRingBuffer:
         self.write_index += 1
 
     def read(self):
-        if self.read_index >= self.write_index:
+        if self.is_empty:
             return None
 
-        offset = (self.read_index % self.capacity) * self.RECORD_SIZE
+        offset = (
+            self.read_index % self.capacity
+        ) * self.RECORD_SIZE
 
         data = self._mmap[
             offset : offset + self.RECORD_SIZE
