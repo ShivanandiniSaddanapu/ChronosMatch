@@ -32,3 +32,6 @@ Thumbs.db
 # Cython generated files
 *.c
 *.pyd
+
+# Runtime mmap files
+*.mmap
