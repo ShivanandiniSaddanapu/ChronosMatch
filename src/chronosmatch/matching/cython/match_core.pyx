@@ -150,14 +150,24 @@ cdef class CythonOrderBook:
             else:
                 trade_quantity = resting.quantity
 
-            trades.append(
-                (
-                    order_id,
-                    resting.order_id,
-                    trade_quantity,
-                    resting.price,
+            if side == 0:
+                trades.append(
+                    (
+                        order_id,
+                        resting.order_id,
+                        trade_quantity,
+                        resting.price,
+                    )
                 )
-            )
+            else:
+                trades.append(
+                    (
+                        resting.order_id,
+                        order_id,
+                        trade_quantity,
+                        resting.price,
+                    )
+                )
 
             remaining -= trade_quantity
             resting.quantity -= trade_quantity

@@ -32,7 +32,7 @@ def test_sell_matches_highest_buy_price_first():
     trades = book.match_order(3, 99.0, 50, 1)
 
     assert trades == [
-        (3, 2, 50, 100.0),
+        (2, 3, 50, 100.0),
     ]
 
 
