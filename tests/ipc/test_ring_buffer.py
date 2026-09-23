@@ -36,8 +36,9 @@ def test_record_size(tmp_path):
 
     buffer = MMapRingBuffer(str(file_path), capacity=4)
 
+    assert buffer.HEADER_SIZE == 16
     assert buffer.RECORD_SIZE == 24
-    assert buffer.size == 96
+    assert buffer.size == 112
 
     buffer.close()
 
