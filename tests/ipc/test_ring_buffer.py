@@ -1,3 +1,5 @@
+import multiprocessing as mp
+
 from chronosmatch.ipc.ring_buffer import MMapRingBuffer
 
 
@@ -128,3 +130,53 @@ def test_invalid_order_data(tmp_path):
         pass
 
     buffer.close()
+
+
+
+
+def _ipc_consumer(file_path, result_queue):
+    buffer = MMapRingBuffer(file_path, capacity=4)
+
+    received = []
+
+    while len(received) < 3:
+        order = buffer.read()
+
+        if order is not None:
+            received.append(order)
+
+    buffer.close()
+    result_queue.put(received)
+
+
+def test_shared_mmap_between_processes(tmp_path):
+    file_path = str(tmp_path / "orders.mmap")
+
+    buffer = MMapRingBuffer(file_path, capacity=4)
+    buffer.close()
+
+    result_queue = mp.Queue()
+
+    consumer = mp.Process(
+        target=_ipc_consumer,
+        args=(file_path, result_queue),
+    )
+
+    consumer.start()
+
+    buffer = MMapRingBuffer(file_path, capacity=4)
+
+    buffer.write(101, 150.25, 50)
+    buffer.write(102, 151.75, 25)
+    buffer.write(103, 152.50, 10)
+
+    buffer.close()
+
+    consumer.join(timeout=5)
+
+    assert consumer.exitcode == 0
+    assert result_queue.get() == [
+        (101, 150.25, 50),
+        (102, 151.75, 25),
+        (103, 152.50, 10),
+    ]    
