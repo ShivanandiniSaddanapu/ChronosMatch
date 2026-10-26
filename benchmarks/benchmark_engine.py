@@ -1,3 +1,4 @@
+
 import time
 
 from chronosmatch.matching.cython_adapter import CythonMatchingAdapter
@@ -7,6 +8,7 @@ from chronosmatch.matching.order import Order, OrderSide
 
 NUMBER_OF_ORDERS = 50_000
 RUNS = 5
+NANOSECONDS_PER_SECOND = 1_000_000_000
 
 
 def matching_workload(engine, number_of_orders: int = NUMBER_OF_ORDERS) -> None:
@@ -32,28 +34,30 @@ def matching_workload(engine, number_of_orders: int = NUMBER_OF_ORDERS) -> None:
 
 
 def benchmark(name, engine_factory, runs: int = RUNS):
-    results = []
+    results_ns = []
 
     for _ in range(runs):
         engine = engine_factory()
 
-        start = time.perf_counter()
+        start_ns = time.perf_counter_ns()
         matching_workload(engine)
-        elapsed = time.perf_counter() - start
+        elapsed_ns = time.perf_counter_ns() - start_ns
 
-        results.append(elapsed)
+        results_ns.append(elapsed_ns)
 
-    average_time = sum(results) / len(results)
-    throughput = NUMBER_OF_ORDERS / average_time
+    average_ns = sum(results_ns) / len(results_ns)
+    average_seconds = average_ns / NANOSECONDS_PER_SECOND
+    throughput = NUMBER_OF_ORDERS / average_seconds
 
     print(f"=== {name} ===")
-    print(f"Runs            : {runs}")
-    print(f"Orders per run  : {NUMBER_OF_ORDERS:,}")
-    print(f"Average time    : {average_time:.6f} seconds")
-    print(f"Throughput      : {throughput:,.0f} orders/second")
+    print(f"Runs                 : {runs}")
+    print(f"Orders per run       : {NUMBER_OF_ORDERS:,}")
+    print(f"Average time         : {average_seconds:.6f} seconds")
+    print(f"Average time         : {average_ns:,.0f} nanoseconds")
+    print(f"Throughput           : {throughput:,.0f} orders/second")
     print()
 
-    return average_time, throughput
+    return average_seconds, throughput
 
 
 if __name__ == "__main__":
