@@ -110,5 +110,45 @@ def test_successful_flush_persists_and_acknowledges_events(tmp_path):
                 assert saved_trade.quantity == 7
 
     asyncio.run(scenario())
-   
+
+
+
+def test_flush_respects_batch_size(tmp_path):
+    async def scenario():
+        with TradeMMapRingBuffer(
+            str(tmp_path / "trades.mmap"),
+            capacity=4,
+        ) as buffer:
+            with TradeLedger(tmp_path / "trades.db") as ledger:
+                buffer.write(200, make_trade(price=100.0, quantity=1))
+                buffer.write(201, make_trade(price=101.0, quantity=2))
+                buffer.write(202, make_trade(price=102.0, quantity=3))
+
+                flusher = AsyncTradeFlusher(
+                    buffer,
+                    ledger,
+                    batch_size=2,
+                )
+
+                first_flush = await flusher.flush_once()
+
+                assert first_flush == 2
+                assert buffer.count == 1
+                assert ledger.count() == 2
+
+                second_flush = await flusher.flush_once()
+
+                assert second_flush == 1
+                assert buffer.count == 0
+                assert ledger.count() == 3
+
+                saved_trades = ledger.get_trades()
+                assert [trade.price for trade in saved_trades] == [
+                    100.0,
+                    101.0,
+                    102.0,
+                ]
+
+    asyncio.run(scenario())
+
 
