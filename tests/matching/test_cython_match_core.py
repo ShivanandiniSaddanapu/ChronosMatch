@@ -1,3 +1,7 @@
+import pytest
+
+
+
 from chronosmatch.matching.cython.match_core import CythonOrderBook
 
 
@@ -112,3 +116,36 @@ def test_full_fill_removes_resting_order():
     ]
 
     assert book.size() == 0
+
+
+
+
+@pytest.mark.parametrize("price", [float("nan"), float("inf"), float("-inf"), 0.0, -1.0])
+def test_add_order_rejects_invalid_prices(price):
+    book = CythonOrderBook()
+
+    with pytest.raises(ValueError):
+        book.add_order(1, price, 10, 0)
+
+    assert book.size() == 0
+
+
+@pytest.mark.parametrize("price", [float("nan"), float("inf"), float("-inf"), 0.0, -1.0])
+def test_match_order_rejects_invalid_prices(price):
+    book = CythonOrderBook()
+
+    with pytest.raises(ValueError):
+        book.match_order(1, price, 10, 0)
+
+    assert book.size() == 0
+
+
+def test_order_book_rejects_orders_beyond_capacity():
+    book = CythonOrderBook(capacity=1)
+
+    book.add_order(1, 100.0, 10, 0)
+
+    with pytest.raises(OverflowError, match="order book is full"):
+        book.add_order(2, 101.0, 10, 0)
+
+    assert book.size() == 1

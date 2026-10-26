@@ -1,117 +1,125 @@
-﻿# Week 3: Cython Matching Optimization Results
+﻿# ChronosMatch — Week 3 Cython Matching Optimization Results
 
-## Optimization
-- Added a CTrade C structure for storing trade results.
+## 1. Objectives
+
+The objectives for Week 3 were to:
+
+- Reduce Python-object interaction in the Cython matching hot path.
+- Preserve matching correctness and price-time priority.
+- Measure execution time, throughput, and order-submission latency.
+- Run regression tests and compare the Python engine with the Cython adapter.
+
+## 2. Optimization Implemented
+
+The following changes were implemented:
+
+- Added a `CTrade` C structure to store trade results.
 - Added a preallocated C-level trade buffer.
 - Stored trade results in C memory during the matching loop.
-- Converted buffered trades into Python tuples after matching completed.
+- Converted buffered trade results into Python tuples after matching.
 - Preserved the existing adapter return format.
+- Added validation to reject non-finite, zero, and negative prices.
+- Added automated tests for invalid prices and order-book capacity.
+- Used `time.perf_counter_ns()` for nanosecond-resolution timing measurements.
 
-## Correctness Verification
-- Test command: pytest -q --basetemp=.pytest-tmp
-- Result: 37 passed
+## 3. Correctness Verification
 
-## Direct Cython Benchmark
+The Cython extension was rebuilt successfully using:
+
+```powershell
+python setup.py build_ext --inplace --force
+```
+
+The complete test suite was executed using:
+
+```powershell
+pytest -q --basetemp=.pytest-tmp
+```
+
+**Latest result: 48 passed in 2.80 seconds.**
+
+The successful test run verifies the covered matching, adapter, order-book, simulation, IPC, and validation behaviors.
+
+## 4. Latest Python Engine vs. Cython Adapter Benchmark
+
+### Configuration
+
 - Orders per run: 50,000
-- Runs: 5
-- Previous average time: 0.009992 seconds
-- New average time: 0.008991 seconds
-- Previous throughput: 5,003,893 orders/second
-- New throughput: 5,561,179 orders/second
-- Throughput improvement: approximately 11.1%
+- Number of runs: 5
+- Workload: Alternating BUY and SELL orders
+- Price: 100.0
+- Quantity per order: 10
+- Timing: `time.perf_counter_ns()`
 
-## Engine Comparison
-- Python engine: 440,836 orders/second
-- Cython adapter: 601,986 orders/second
-- Measured adapter speedup: 1.37x
-
-## Observation
-Direct Cython throughput improved in this measurement, but adapter throughput
-was lower than the previous baseline. Further benchmarking is needed before
-claiming an overall performance improvement.
-
-## Limitations
-The matching loop stores trade records in C memory, but the method still
-creates Python tuples and a list when returning results.
-
-
-
-# Week 3: Cython Matching Optimization Results
-
-## Optimization Implemented
-
-- Added a `CTrade` C structure for storing trade results.
-- Added a preallocated C-level trade buffer.
-- Stored trade results in C memory during the matching loop.
-- Converted buffered trades into Python tuples after matching completed.
-- Preserved the existing adapter return format.
-- Updated both benchmark scripts to use `time.perf_counter_ns()` for elapsed-time measurements.
-
-## Correctness Verification
-
-- Test command: `pytest -q --basetemp=.pytest-tmp`
-- Latest result: **37 passed**
-- Fresh Cython extension import: verified successfully.
-
-## Latest Direct Cython Benchmark
-
-| Metric | Result |
-|---|---:|
-| Orders per run | 50,000 |
-| Runs | 5 |
-| Average elapsed time | 10.13456 ms |
-| Average throughput | 4,933,613 orders/second |
-
-### Historical Direct Cython Measurement
-
-The earlier report recorded a throughput of 5,003,893 orders/second. The latest result is slightly lower, so the current measurements do not establish a direct-Cython performance improvement.
-
-An earlier measurement of 5,561,179 orders/second was also recorded. These measurements vary, and the original baseline should not be treated as a guaranteed performance level.
-
-## Latest Engine Comparison
+### Results
 
 | Metric | Python MatchingEngine | Cython Matching Adapter |
 |---|---:|---:|
-| Runs | 5 | 5 |
-| Orders per run | 50,000 | 50,000 |
-| Average elapsed time | 110.5704 ms | 86.46324 ms |
-| Average throughput | 452,201 orders/second | 578,280 orders/second |
+| Average workload time | 98.06336 ms | 76.16506 ms |
+| Average workload time | 98,063,360 ns | 76,165,060 ns |
+| Average order-submission latency | 998 ns | 591 ns |
+| Minimum observed order latency | 600 ns | 300 ns |
+| Maximum observed order latency | 183,700 ns | 926,800 ns |
+| Throughput | 509,874 orders/second | 656,469 orders/second |
 
-Measured adapter speedup: **1.28×**.
+### Performance Comparison
 
-The adapter delivered approximately 27.9% higher throughput than the Python engine in this benchmark run.
+The Cython adapter achieved approximately **1.29× throughput**, or **28.8% higher throughput**, than the Python matching engine in this benchmark run.
 
-## Historical Three-Run Adapter Comparison
+The average measured order-submission latency was lower for the Cython adapter. However, the adapter's maximum observed latency was higher, demonstrating that average performance does not represent every individual order.
 
-| Run | Python orders/sec | Adapter orders/sec | Speedup |
-|---|---:|---:|---:|
-| 1 | 449,709 | 637,508 | 1.42× |
-| 2 | 439,067 | 597,446 | 1.36× |
-| 3 | 450,878 | 634,367 | 1.41× |
+These figures describe the latest measured run and are not universal performance guarantees.
 
-Average speedup across these historical runs: approximately 1.40×.
+## 5. Latest Direct Cython Benchmark
 
-An earlier separate measurement recorded 440,836 orders/second for the Python engine and 601,986 orders/second for the adapter, a speedup of 1.37×.
+### Configuration
 
-Historical measurements are retained for comparison and are not combined with the latest five-run benchmark.
+- Orders per run: 50,000
+- Number of runs: 5
+- Timing: `time.perf_counter_ns()`
 
-## Interpretation and Limitations
+### Results
 
-- The latest engine benchmark shows that the Cython adapter outperformed the Python engine for the tested workload.
-- The measured speedup varies between runs.
-- The latest direct Cython throughput is slightly below the earlier 5,003,893 orders/second baseline.
-- The matching loop stores trade records in C memory, but the method still creates Python tuples and a list when returning results.
-- Benchmark results depend on the environment, workload, and measurement conditions. Further repeated measurements are needed before making broader performance claims.
+| Metric | Result |
+|---|---:|
+| Average runtime | 0.00695748 seconds |
+| Average runtime | 6,957,480 nanoseconds |
+| Throughput | 7,186,510 orders/second |
 
-## Week 3 Verification Checklist
+This benchmark measures the direct Cython matching path. Its results should not be compared directly with the Python engine or adapter benchmark because the execution paths and measurement scope differ.
 
-- [x] Fresh Cython extension import verified.
-- [x] Automated tests passed: 37/37.
-- [x] Nanosecond timing added to both benchmark scripts.
+Earlier direct-Cython measurements varied. The latest result is recorded as a separate measurement rather than combined with historical results.
+
+## 6. Interpretation and Limitations
+
+- The latest engine comparison showed higher throughput for the Cython adapter than for the Python engine under the tested workload.
+- Benchmark results depend on the environment, workload, and measurement overhead.
+- `time.perf_counter_ns()` provides nanosecond-resolution readings; it does not guarantee nanosecond measurement accuracy.
+- Order-submission latency measures the duration of `engine.submit(order)`. It is not end-to-end IPC latency or individual trade-fill latency.
+- The Cython matching method still creates Python tuples and a list when returning trade results.
+- The direct Cython benchmark and adapter benchmark use different execution paths and should be interpreted separately.
+- These measurements do not prove that every order completes within 50 microseconds or guarantee production performance.
+- Further profiling and repeated measurements may be useful before making broader performance claims.
+
+## 7. Week 3 Verification Checklist
+
+- [x] C-level trade structure implemented.
+- [x] Preallocated C-level trade buffer implemented.
+- [x] Existing adapter return format preserved.
+- [x] Invalid-price validation implemented.
+- [x] Automated validation and regression tests executed.
+- [x] Cython extension rebuilt successfully.
+- [x] Full test suite passed: 48/48.
+- [x] Python engine versus Cython adapter benchmark executed.
 - [x] Direct Cython benchmark executed.
-- [x] Python versus Cython adapter benchmark executed.
-- [x] Temporary test directory removed.
-- [x] Git whitespace check completed without whitespace errors.
-- [ ] Final report and changes committed.
+- [x] Temporary pytest directory removed.
+- [ ] Final Git review completed.
+- [ ] Final changes committed and pushed to GitHub.
 
-Week 3 is pending the final Git review and commit.
+## 8. Week 3 Status
+
+The Cython optimization, validation changes, regression testing, and benchmark execution are complete.
+
+The remaining steps are to review the final Git diff, verify that generated files and temporary artifacts are handled correctly, commit the intended changes, and push them to GitHub.
+
+**Week 3 should be marked fully complete after the final review and successful push.**

@@ -1,6 +1,7 @@
 
 from libc.stdint cimport int64_t
 from libc.stdlib cimport malloc, free
+from libc.math cimport isfinite
 
 
 cdef struct COrder:
@@ -30,23 +31,17 @@ cdef class CythonOrderBook:
 
         self.capacity = capacity
         self.order_count = 0
+        self.orders = NULL
+        self.trade_buffer = NULL
 
         # Allocate memory for resting orders.
-        self.orders = <COrder*>malloc(
-            capacity * sizeof(COrder)
-        )
+        self.orders = <COrder*>malloc(capacity * sizeof(COrder))
 
         if self.orders == NULL:
             raise MemoryError("Failed to allocate order book")
 
-        # Initialize the trade buffer pointer before allocation.
-        self.trade_buffer = NULL
-
-        # Allocate enough trade slots for the maximum possible
-        # number of fills from the resting orders in this book.
-        self.trade_buffer = <CTrade*>malloc(
-            capacity * sizeof(CTrade)
-        )
+        # Allocate trade slots for the maximum possible fills.
+        self.trade_buffer = <CTrade*>malloc(capacity * sizeof(CTrade))
 
         if self.trade_buffer == NULL:
             free(self.orders)
@@ -74,8 +69,8 @@ cdef class CythonOrderBook:
         if order_id < 0:
             raise ValueError("Order ID must not be negative")
 
-        if price <= 0:
-            raise ValueError("Price must be greater than zero")
+        if not isfinite(price) or price <= 0:
+            raise ValueError("Price must be finite and greater than zero")
 
         if quantity <= 0:
             raise ValueError("Quantity must be greater than zero")
@@ -87,7 +82,6 @@ cdef class CythonOrderBook:
             raise OverflowError("Cython order book is full")
 
         order = &self.orders[self.order_count]
-
         order.order_id = order_id
         order.price = price
         order.quantity = quantity
@@ -119,8 +113,8 @@ cdef class CythonOrderBook:
         if order_id < 0:
             raise ValueError("Order ID must not be negative")
 
-        if price <= 0:
-            raise ValueError("Price must be greater than zero")
+        if not isfinite(price) or price <= 0:
+            raise ValueError("Price must be finite and greater than zero")
 
         if quantity <= 0:
             raise ValueError("Quantity must be greater than zero")
@@ -129,13 +123,13 @@ cdef class CythonOrderBook:
             raise ValueError("Side must be 0 (BUY) or 1 (SELL)")
 
         remaining = quantity
-        best_index = -1
         trade_count = 0
+        best_index = -1
         found = False
         best_price = 0.0
 
-        # Match orders using C structs. Do not create Python
-        # trade tuples inside the matching loop.
+        # Match orders using C structs. Trade tuples are created
+        # only after the matching loop completes.
         while remaining > 0:
             best_index = -1
             found = False
@@ -158,7 +152,6 @@ cdef class CythonOrderBook:
                         best_index = i
                         best_price = resting.price
                         found = True
-
                 else:
                     # Incoming SELL matches the highest eligible BUY.
                     if resting.price < price:
@@ -169,8 +162,8 @@ cdef class CythonOrderBook:
                         best_price = resting.price
                         found = True
 
-                # Equal-price orders retain time priority:
-                # the first eligible order encountered wins.
+                # Equal prices preserve time priority because the
+                # earliest eligible order is encountered first.
 
             if not found:
                 break
@@ -182,19 +175,15 @@ cdef class CythonOrderBook:
             else:
                 trade_quantity = resting.quantity
 
-            # Store the trade in the preallocated C buffer.
-            # Convert to Python tuples only after matching finishes.
             if trade_count >= self.capacity:
                 raise OverflowError("Cython trade buffer is full")
 
             trade = &self.trade_buffer[trade_count]
 
             if side == 0:
-                # Incoming order is BUY; resting order is SELL.
                 trade.buy_order_id = order_id
                 trade.sell_order_id = resting.order_id
             else:
-                # Resting order is BUY; incoming order is SELL.
                 trade.buy_order_id = resting.order_id
                 trade.sell_order_id = order_id
 
@@ -202,29 +191,21 @@ cdef class CythonOrderBook:
             trade.price = resting.price
 
             trade_count += 1
-
             remaining -= trade_quantity
             resting.quantity -= trade_quantity
 
             if resting.quantity == 0:
                 self._remove_order(best_index)
 
-        # Preserve any unmatched incoming quantity in the book.
+        # Preserve unmatched incoming quantity.
         if remaining > 0:
-            self._add_remaining_order(
-                order_id,
-                price,
-                remaining,
-                side,
-            )
+            self._add_remaining_order(order_id, price, remaining, side)
 
-        # Convert C trade records into the same list-of-tuples
-        # format expected by the existing adapter and tests.
+        # Convert C trade records to the adapter's expected format.
         trades = []
 
         for i in range(trade_count):
             trade = &self.trade_buffer[i]
-
             trades.append(
                 (
                     trade.buy_order_id,
@@ -257,7 +238,6 @@ cdef class CythonOrderBook:
             raise OverflowError("Cython order book is full")
 
         order = &self.orders[self.order_count]
-
         order.order_id = order_id
         order.price = price
         order.quantity = quantity
