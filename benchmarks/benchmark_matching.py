@@ -9,6 +9,7 @@ from chronosmatch.matching.order import Order, OrderSide
 
 WARMUP_GROUPS = 500
 MEASURED_GROUPS = 5_000
+MEASURED_ROUNDS = 5
 
 
 def make_trade_heavy_orders(groups: int) -> list[Order]:
@@ -41,11 +42,7 @@ def percentile(values: list[int], percent: float) -> int:
     return ordered[index]
 
 
-def run_benchmark(
-    engine_name: str,
-    engine,
-    orders: list[Order],
-) -> dict:
+def run_benchmark(engine_name: str, engine, orders: list[Order]) -> dict:
     """Measure submission latency and collect executed trades."""
     latencies = []
     trade_count = 0
@@ -89,51 +86,8 @@ def run_benchmark(
     }
 
 
-def main() -> None:
-    # Warm up each engine using its own fresh Order objects.
-    warmup_engines = (
-        ("Python", MatchingEngine()),
-        ("Cython", CythonMatchingAdapter(capacity=128)),
-    )
-
-    for name, engine in warmup_engines:
-        warmup_orders = make_trade_heavy_orders(WARMUP_GROUPS)
-
-        for order in warmup_orders:
-            engine.submit(order)
-
-        print(f"{name} warm-up completed.")
-
-    # Benchmark each implementation with independent, fresh orders.
-    python_result = run_benchmark(
-        "Python",
-        MatchingEngine(),
-        make_trade_heavy_orders(MEASURED_GROUPS),
-    )
-
-    cython_result = run_benchmark(
-        "Cython",
-        CythonMatchingAdapter(capacity=128),
-        make_trade_heavy_orders(MEASURED_GROUPS),
-    )
-
-    print("\nChronosMatch Trade-Heavy Benchmark")
-    print("=" * 70)
-    print("Matching scenario: 3 sell levels swept by each buy order")
-    print(f"Groups per engine: {MEASURED_GROUPS:,}")
-
-    for result in (python_result, cython_result):
-        print(f"\n{result['engine']} engine")
-        print(f"Orders submitted:    {result['orders']:,}")
-        print(f"Trades executed:     {result['trades']:,}")
-        print(f"Shares traded:       {result['total_quantity']:,}")
-        print(f"Throughput:          {result['throughput']:,.0f} orders/sec")
-        print(f"Average latency:     {result['average_us']:.3f} us")
-        print(f"p50 latency:         {result['p50_us']:.3f} us")
-        print(f"p95 latency:         {result['p95_us']:.3f} us")
-        print(f"p99 latency:         {result['p99_us']:.3f} us")
-
-    # Verify both engines generated identical executions.
+def verify_equivalence(python_result: dict, cython_result: dict) -> None:
+    """Verify identical trade executions and expected totals."""
     if python_result["trade_signature"] != cython_result["trade_signature"]:
         raise RuntimeError(
             "Python and Cython produced different trade executions."
@@ -153,10 +107,90 @@ def main() -> None:
                 f"Unexpected trade totals for {result['engine']} engine."
             )
 
-    print("\nExecution equivalence: PASSED")
-    print(f"Expected orders: {expected_orders:,}")
-    print(f"Expected trades: {expected_trades:,}")
-    print(f"Expected shares: {expected_quantity:,}")
+
+def main() -> None:
+    # Warm up each implementation with a fresh engine and fresh orders.
+    for name, engine in (
+        ("Python", MatchingEngine()),
+        ("Cython", CythonMatchingAdapter(capacity=128)),
+    ):
+        for order in make_trade_heavy_orders(WARMUP_GROUPS):
+            engine.submit(order)
+
+        print(f"{name} warm-up completed.")
+
+    results = {"Python": [], "Cython": []}
+
+    for round_number in range(MEASURED_ROUNDS):
+        # Alternate which implementation is measured first.
+        if round_number % 2 == 0:
+            order = ("Python", "Cython")
+        else:
+            order = ("Cython", "Python")
+
+        round_results = {}
+
+        for name in order:
+            engine = (
+                MatchingEngine()
+                if name == "Python"
+                else CythonMatchingAdapter(capacity=128)
+            )
+
+            result = run_benchmark(
+                name,
+                engine,
+                make_trade_heavy_orders(MEASURED_GROUPS),
+            )
+            results[name].append(result)
+            round_results[name] = result
+
+        verify_equivalence(
+            round_results["Python"],
+            round_results["Cython"],
+        )
+
+        print(f"Round {round_number + 1}/{MEASURED_ROUNDS}: equivalence passed")
+
+    print("\nChronosMatch Trade-Heavy Benchmark")
+    print("=" * 70)
+    print(f"Groups per engine per round: {MEASURED_GROUPS:,}")
+    print(f"Measured rounds: {MEASURED_ROUNDS}")
+    print("Execution order: alternated each round")
+
+    summaries = {}
+
+    for name in ("Python", "Cython"):
+        runs = results[name]
+        summaries[name] = {
+            "throughput": statistics.median(
+                result["throughput"] for result in runs
+            ),
+            "average_us": statistics.median(
+                result["average_us"] for result in runs
+            ),
+            "p50_us": statistics.median(result["p50_us"] for result in runs),
+            "p95_us": statistics.median(result["p95_us"] for result in runs),
+            "p99_us": statistics.median(result["p99_us"] for result in runs),
+        }
+
+        summary = summaries[name]
+        print(f"\n{name} engine (median across rounds)")
+        print(f"Throughput:      {summary['throughput']:,.0f} orders/sec")
+        print(f"Average latency: {summary['average_us']:.3f} us")
+        print(f"p50 latency:     {summary['p50_us']:.3f} us")
+        print(f"p95 latency:     {summary['p95_us']:.3f} us")
+        print(f"p99 latency:     {summary['p99_us']:.3f} us")
+
+    speedup = (
+        summaries["Cython"]["throughput"]
+        / summaries["Python"]["throughput"]
+    )
+    print(f"\nMedian throughput speedup: {speedup:.2f}x")
+    print("Execution equivalence: PASSED for every measured round")
+    print(f"Orders per engine per round: {MEASURED_GROUPS * 4:,}")
+    print(f"Trades per engine per round: {MEASURED_GROUPS * 3:,}")
+    print(f"Shares per engine per round: {MEASURED_GROUPS * 3:,}")
 
 
 if __name__ == "__main__":
