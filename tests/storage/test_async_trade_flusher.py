@@ -152,3 +152,38 @@ def test_flush_respects_batch_size(tmp_path):
     asyncio.run(scenario())
 
 
+
+
+def test_stop_flushes_pending_events_before_exit(tmp_path):
+    async def scenario():
+        with TradeMMapRingBuffer(
+            str(tmp_path / "trades.mmap"),
+            capacity=4,
+        ) as buffer:
+            with TradeLedger(tmp_path / "trades.db") as ledger:
+                trade = make_trade(price=150.0, quantity=4)
+                buffer.write(300, trade)
+
+                flusher = AsyncTradeFlusher(
+                    buffer,
+                    ledger,
+                    poll_interval=0.01,
+                )
+
+                task = asyncio.create_task(flusher.run())
+                flusher.stop()
+
+                await asyncio.wait_for(task, timeout=2)
+
+                assert buffer.is_empty
+                assert buffer.count == 0
+                assert ledger.count() == 1
+
+                saved_trade = ledger.get_trades()[0]
+                assert saved_trade.price == 150.0
+                assert saved_trade.quantity == 4
+
+    asyncio.run(scenario())
+
+
+
