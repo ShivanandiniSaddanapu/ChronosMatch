@@ -1,4 +1,5 @@
 
+
 import time
 
 from chronosmatch.matching.cython_adapter import CythonMatchingAdapter
@@ -11,7 +12,11 @@ RUNS = 5
 NANOSECONDS_PER_SECOND = 1_000_000_000
 
 
-def matching_workload(engine, number_of_orders: int = NUMBER_OF_ORDERS) -> None:
+def matching_workload(engine, number_of_orders: int = NUMBER_OF_ORDERS):
+    total_latency_ns = 0
+    min_latency_ns = None
+    max_latency_ns = 0
+
     for order_id in range(number_of_orders):
         if order_id % 2 == 0:
             order = Order.create(
@@ -30,31 +35,72 @@ def matching_workload(engine, number_of_orders: int = NUMBER_OF_ORDERS) -> None:
                 quantity=10,
             )
 
+        # Record the timestamp immediately before submission.
+        entry_ns = time.perf_counter_ns()
+
         engine.submit(order)
+
+        # Record the timestamp immediately after submission.
+        exit_ns = time.perf_counter_ns()
+
+        latency_ns = exit_ns - entry_ns
+        total_latency_ns += latency_ns
+
+        if min_latency_ns is None or latency_ns < min_latency_ns:
+            min_latency_ns = latency_ns
+
+        if latency_ns > max_latency_ns:
+            max_latency_ns = latency_ns
+
+    average_latency_ns = total_latency_ns / number_of_orders
+
+    return average_latency_ns, min_latency_ns, max_latency_ns
 
 
 def benchmark(name, engine_factory, runs: int = RUNS):
-    results_ns = []
+    elapsed_results_ns = []
+    latency_results_ns = []
 
     for _ in range(runs):
         engine = engine_factory()
 
+        # Measure the complete workload.
         start_ns = time.perf_counter_ns()
-        matching_workload(engine)
+
+        average_latency_ns, min_latency_ns, max_latency_ns = (
+            matching_workload(engine)
+        )
+
         elapsed_ns = time.perf_counter_ns() - start_ns
 
-        results_ns.append(elapsed_ns)
+        elapsed_results_ns.append(elapsed_ns)
+        latency_results_ns.append(
+            (average_latency_ns, min_latency_ns, max_latency_ns)
+        )
 
-    average_ns = sum(results_ns) / len(results_ns)
-    average_seconds = average_ns / NANOSECONDS_PER_SECOND
+    average_elapsed_ns = sum(elapsed_results_ns) / len(elapsed_results_ns)
+    average_seconds = average_elapsed_ns / NANOSECONDS_PER_SECOND
     throughput = NUMBER_OF_ORDERS / average_seconds
 
+    average_order_latency_ns = (
+        sum(result[0] for result in latency_results_ns) / runs
+    )
+    minimum_order_latency_ns = min(
+        result[1] for result in latency_results_ns
+    )
+    maximum_order_latency_ns = max(
+        result[2] for result in latency_results_ns
+    )
+
     print(f"=== {name} ===")
-    print(f"Runs                 : {runs}")
-    print(f"Orders per run       : {NUMBER_OF_ORDERS:,}")
-    print(f"Average time         : {average_seconds:.6f} seconds")
-    print(f"Average time         : {average_ns:,.0f} nanoseconds")
-    print(f"Throughput           : {throughput:,.0f} orders/second")
+    print(f"Runs                       : {runs}")
+    print(f"Orders per run             : {NUMBER_OF_ORDERS:,}")
+    print(f"Average workload time      : {average_seconds:.6f} seconds")
+    print(f"Average workload time      : {average_elapsed_ns:,.0f} nanoseconds")
+    print(f"Average order latency      : {average_order_latency_ns:,.0f} nanoseconds")
+    print(f"Minimum order latency      : {minimum_order_latency_ns:,} nanoseconds")
+    print(f"Maximum order latency      : {maximum_order_latency_ns:,} nanoseconds")
+    print(f"Throughput                 : {throughput:,.0f} orders/second")
     print()
 
     return average_seconds, throughput
