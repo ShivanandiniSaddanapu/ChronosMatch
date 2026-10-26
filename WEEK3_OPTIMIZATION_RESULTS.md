@@ -113,8 +113,8 @@ Earlier direct-Cython measurements varied. The latest result is recorded as a se
 - [x] Python engine versus Cython adapter benchmark executed.
 - [x] Direct Cython benchmark executed.
 - [x] Temporary pytest directory removed.
-- [ ] Final Git review completed.
-- [ ] Final changes committed and pushed to GitHub.
+- [x] Final Git review completed.
+- [x] Final changes committed and pushed to GitHub.
 
 ## 8. Week 3 Status
 
