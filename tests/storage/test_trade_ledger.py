@@ -99,3 +99,38 @@ def test_failed_batch_does_not_save_partial_trades(tmp_path):
 
         # The entire batch should roll back.
         assert ledger.count() == 0
+
+
+def test_same_event_id_is_not_saved_twice(tmp_path):
+    database = tmp_path / "trades.db"
+    trade = make_trade()
+
+    with TradeLedger(database) as ledger:
+        assert ledger.save_events([(42, trade)]) == 1
+        assert ledger.save_events([(42, trade)]) == 0
+        assert ledger.count() == 1
+
+
+def test_different_event_ids_can_save_identical_trades(tmp_path):
+    database = tmp_path / "trades.db"
+    trade = make_trade()
+
+    with TradeLedger(database) as ledger:
+        assert ledger.save_events([(42, trade), (43, trade)]) == 2
+        assert ledger.count() == 2
+
+
+def test_failed_event_batch_rolls_back(tmp_path):
+    database = tmp_path / "trades.db"
+    valid_trade = make_trade()
+    invalid_trade = make_trade(price=0)
+
+    with TradeLedger(database) as ledger:
+        with pytest.raises(sqlite3.IntegrityError):
+            ledger.save_events([
+                (100, valid_trade),
+                (101, invalid_trade),
+            ])
+
+        assert ledger.count() == 0
+        assert ledger.save_events([(100, valid_trade)]) == 1
